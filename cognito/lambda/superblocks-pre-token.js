@@ -31,7 +31,7 @@ const SUPERBLOCKS_TOKEN_PATH = "/api/v1/public/token";
 //     --user-attributes Name=custom:role,Value=contractor
 // (Requires `custom:role` to be declared on the pool via add-custom-attributes.)
 const ROLE_TO_GROUP_ID = {
-  contractor: "46943925-7d8e-440a-aa42-67969f1701fc",
+  contractor: "YOUR_GROUP_ID",
 };
 
 const postJson = (host, path, headers, body) =>
