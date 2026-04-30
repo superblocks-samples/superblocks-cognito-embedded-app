@@ -1,0 +1,17 @@
+{
+  "name": "superblocks-cognito-embedded-app",
+  "version": "1.0.0",
+  "description": "Superblocks embedded app with AWS Cognito login and Pre Token Generation Lambda SSO.",
+  "scripts": {
+    "start": "npm run dev --prefix ./app",
+    "dev:app": "npm run dev --prefix ./app",
+    "build:app": "npm run build --prefix ./app",
+    "build": "npm run build --prefix ./app"
+  },
+  "author": "Kris Harbold",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  }
+}

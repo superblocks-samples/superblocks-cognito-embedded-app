@@ -1,0 +1,15 @@
+# Node modules
+node_modules/
+
+# Built Assets
+build/
+function.zip
+
+# Environment files (real values)
+.env*
+env.local.json
+
+# OS or Editor folders
+.DS_Store
+.vscode/
+.idea/
