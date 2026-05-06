@@ -14,6 +14,7 @@ import {
 import { Hub } from "aws-amplify/utils";
 import { useLocation, useNavigate } from "react-router-dom";
 import ErrorPage from "./components/ErrorPage";
+import UserProfileSlideout, { UserProfile } from "./components/UserProfileSlideout";
 import "./App.css";
 
 interface AppError {
@@ -21,6 +22,8 @@ interface AppError {
   message: string;
   details?: string;
   statusCode?: number;
+  icon?: string;
+  showRetry?: boolean;
 }
 
 interface SuperblocksAuthContextValue {
@@ -46,40 +49,10 @@ const RETURN_TO_KEY = "superblocks.returnTo";
 
 type AuthState = "loading" | "authenticated" | "unauthenticated";
 
-const loadingContainerStyle: React.CSSProperties = {
-  display: "flex",
-  justifyContent: "center",
-  alignItems: "center",
-  height: "100vh",
-  flexDirection: "column",
-  gap: "1rem",
-};
-
-const spinnerStyle: React.CSSProperties = {
-  border: "4px solid #f3f3f3",
-  borderTop: "4px solid #3498db",
-  borderRadius: "50%",
-  width: "40px",
-  height: "40px",
-  animation: "spin 1s linear infinite",
-};
-
-const toolbarButtonStyle: React.CSSProperties = {
-  padding: "6px 12px",
-  fontSize: 12,
-  fontFamily: "system-ui, sans-serif",
-  background: "#fff",
-  color: "#111",
-  border: "1px solid #d1d5db",
-  borderRadius: 6,
-  boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
-  cursor: "pointer",
-};
-
 const LoadingScreen = ({ message }: { message: string }) => (
   <div className="App">
-    <div style={loadingContainerStyle}>
-      <div style={spinnerStyle} />
+    <div className="app-loading">
+      <div className="app-spinner" />
       <p>{message}</p>
     </div>
   </div>
@@ -91,6 +64,8 @@ const App = ({ children }: { children: React.ReactNode }) => {
   const [authState, setAuthState] = useState<AuthState>("loading");
   const [superblocksToken, setSuperblocksToken] = useState<string | undefined>();
   const [error, setError] = useState<AppError | null>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile>({});
+  const [profileOpen, setProfileOpen] = useState(false);
   // signInWithRedirect navigates away from the page, but guard anyway so we
   // don't fire it twice if React re-runs the effect before navigation occurs.
   const redirectingRef = useRef(false);
@@ -111,8 +86,9 @@ const App = ({ children }: { children: React.ReactNode }) => {
     }
   }, []);
 
-  // The landing app owns "/" and any non-/apps path (via the catch-all route),
-  // so only show the back button when we're inside a non-landing app's route.
+  // "/" is owned by the landing-app embed (or the placeholder when no
+  // landing app is configured), so only surface a "back" button when we're
+  // inside an /apps/<id>/ route.
   const showBackToLanding = location.pathname.startsWith("/apps/");
 
   const loadSuperblocksTokenFromIdToken = useCallback(async () => {
@@ -136,6 +112,17 @@ const App = ({ children }: { children: React.ReactNode }) => {
         });
         return;
       }
+      // Cache the user profile from the same ID token so the toolbar avatar
+      // and the slideout don't need a second fetchAuthSession() round-trip.
+      const payload = idToken.payload as Record<string, unknown>;
+      setUserProfile({
+        name: typeof payload.name === "string" ? payload.name : undefined,
+        email: typeof payload.email === "string" ? payload.email : undefined,
+        emailVerified:
+          payload.email_verified === true || payload.email_verified === "true",
+        sub: typeof payload.sub === "string" ? payload.sub : undefined,
+      });
+
       setSuperblocksToken(token);
       setAuthState("authenticated");
     } catch (err) {
@@ -195,6 +182,14 @@ const App = ({ children }: { children: React.ReactNode }) => {
     navigate(returnTo, { replace: true });
   }, [authState, location.pathname, navigate]);
 
+  // Clear any in-flight error whenever the route changes. Without this, the
+  // access-denied screen's "Back to your apps" button would change the URL
+  // but the still-set `error` keeps <ErrorPage> mounted, so nothing visibly
+  // happens.
+  useEffect(() => {
+    setError(null);
+  }, [location.pathname]);
+
   // If we're not signed in (and not currently in the middle of the OAuth
   // callback exchange) push the user to the Cognito Hosted UI.
   useEffect(() => {
@@ -216,14 +211,10 @@ const App = ({ children }: { children: React.ReactNode }) => {
     });
   }, [authState, location.pathname, location.search]);
 
-  if (authState === "loading") {
-    return <LoadingScreen message="Loading..." />;
-  }
-
-  if (authState === "unauthenticated") {
-    return <LoadingScreen message="Redirecting to login..." />;
-  }
-
+  // Errors win over loading/redirect screens: a failed OAuth code exchange
+  // (e.g., stale PKCE verifier) leaves us "unauthenticated" with an error
+  // set, and we'd otherwise show "Redirecting to login..." forever instead
+  // of surfacing the actual problem.
   if (error) {
     return (
       <ErrorPage
@@ -231,10 +222,20 @@ const App = ({ children }: { children: React.ReactNode }) => {
         message={error.message}
         details={error.details}
         statusCode={error.statusCode}
+        icon={error.icon}
+        showRetry={error.showRetry !== false}
         onRetry={handleRetry}
         onLogout={handleLogout}
       />
     );
+  }
+
+  if (authState === "loading") {
+    return <LoadingScreen message="Loading..." />;
+  }
+
+  if (authState === "unauthenticated") {
+    return <LoadingScreen message="Redirecting to login..." />;
   }
 
   if (!superblocksToken) {
@@ -252,22 +253,65 @@ const App = ({ children }: { children: React.ReactNode }) => {
       <div className="App app-shell">
         <div className="app-toolbar">
           <div className="app-toolbar-left">
+            <button
+              type="button"
+              className="app-toolbar-brand"
+              onClick={() => navigate("/")}
+              aria-label="Go to home"
+            >
+              <img
+                src="https://cdn.brandfetch.io/idgF9FqCgW/theme/dark/logo.svg?c=1bxid64Mup7aczewSAYMX&t=1667820887617"
+                alt="Amplitude"
+                className="app-toolbar-logo"
+              />
+            </button>
             {showBackToLanding && (
-              <button onClick={() => navigate("/")} style={toolbarButtonStyle}>
+              <button onClick={() => navigate("/")} className="toolbar-button">
                 ← Back to landing page
               </button>
             )}
           </div>
           <div className="app-toolbar-right">
-            <button onClick={handleLogout} style={toolbarButtonStyle}>
-              Sign out
+            <button
+              type="button"
+              className="app-toolbar-avatar"
+              onClick={() => setProfileOpen(true)}
+              aria-label="Open profile"
+              aria-haspopup="dialog"
+              aria-expanded={profileOpen}
+            >
+              {avatarInitials(userProfile)}
             </button>
           </div>
         </div>
         <div className="app-content">{children}</div>
       </div>
+      <UserProfileSlideout
+        open={profileOpen}
+        user={userProfile}
+        onClose={() => setProfileOpen(false)}
+        onSignOut={() => {
+          setProfileOpen(false);
+          handleLogout();
+        }}
+      />
     </SuperblocksAuthContext.Provider>
   );
+};
+
+/** Toolbar avatar — derive 2-letter initials from name, fall back to email. */
+const avatarInitials = (user: UserProfile): string => {
+  const source = (user.name || user.email || "").trim();
+  if (!source) return "?";
+  if (source.includes("@")) {
+    const local = source.split("@")[0];
+    const parts = local.split(/[._-]+/).filter(Boolean);
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+  const parts = source.split(/\s+/).filter(Boolean);
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 };
 
 export default App;

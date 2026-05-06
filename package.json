@@ -8,7 +8,6 @@
     "build:app": "npm run build --prefix ./app",
     "build": "npm run build --prefix ./app"
   },
-  "author": "Kris Harbold",
   "license": "MIT",
   "engines": {
     "node": ">=20.0.0",

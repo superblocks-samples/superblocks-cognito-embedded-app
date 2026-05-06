@@ -11,9 +11,9 @@
  * editor.
  *
  * Environment variables (Lambda → Configuration → Environment variables):
- *   SUPERBLOCKS_TOKEN  — Embed access token from Superblocks Admin
- *                        (recommended: source from AWS Secrets Manager)
- *   SUPERBLOCKS_REGION — "app" (default) or "eu"
+ *   SUPERBLOCKS_TOKEN     — Embed access token from Superblocks Admin
+ *                           (recommended: source from AWS Secrets Manager)
+ *   SUPERBLOCKS_REGION    — "app" (default) or "eu"
  *
  * @see https://docs.superblocks.com/hosting/embedded-apps/how-tos/use-auth-for-sso
  * @see https://docs.aws.amazon.com/cognito/latest/developerguide/user-pool-lambda-pre-token-generation.html
@@ -24,71 +24,69 @@ const SUPERBLOCKS_REGION = process.env.SUPERBLOCKS_REGION || "app";
 const SUPERBLOCKS_TOKEN_HOST = `${SUPERBLOCKS_REGION}.superblocks.com`;
 const SUPERBLOCKS_TOKEN_PATH = "/api/v1/public/token";
 
-// Map a Cognito `custom:role` value to a Superblocks group id. Add the role
-// to a user with:
-//   aws cognito-idp admin-update-user-attributes \
-//     --user-pool-id "$USER_POOL_ID" --username "you@example.com" \
-//     --user-attributes Name=custom:role,Value=contractor
-// (Requires `custom:role` to be declared on the pool via add-custom-attributes.)
-const ROLE_TO_GROUP_ID = {
-  contractor: "YOUR_GROUP_ID",
-};
-
-const postJson = (host, path, headers, body) =>
+/** Issue an HTTPS request and parse JSON; reject on non-2xx responses. */
+const httpsJson = (method, host, path, headers, body) =>
   new Promise((resolve, reject) => {
-    const payload = JSON.stringify(body);
+    const payload = body !== undefined ? JSON.stringify(body) : undefined;
+    const reqHeaders = { accept: "application/json", ...headers };
+    if (payload !== undefined) {
+      reqHeaders["content-type"] = "application/json";
+      reqHeaders["content-length"] = Buffer.byteLength(payload);
+    }
     const req = https.request(
-      {
-        host,
-        path,
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "content-length": Buffer.byteLength(payload),
-          ...headers,
-        },
-      },
+      { host, path, method, headers: reqHeaders },
       (res) => {
         let chunks = "";
         res.on("data", (c) => (chunks += c));
         res.on("end", () => {
-          if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
-            try {
-              resolve(JSON.parse(chunks));
-            } catch (e) {
-              reject(new Error(`Invalid JSON from Superblocks: ${e.message}`));
-            }
-          } else {
-            reject(new Error(`Superblocks ${res.statusCode}: ${chunks}`));
+          const ok =
+            res.statusCode && res.statusCode >= 200 && res.statusCode < 300;
+          let parsed;
+          try {
+            parsed = chunks ? JSON.parse(chunks) : undefined;
+          } catch (_) {
+            parsed = chunks;
           }
+          if (ok) return resolve(parsed);
+          const err = new Error(
+            `Superblocks ${res.statusCode} on ${method} ${host}${path}: ${chunks}`,
+          );
+          err.statusCode = res.statusCode;
+          err.body = parsed;
+          reject(err);
         });
       },
     );
     req.on("error", reject);
-    req.write(payload);
+    if (payload !== undefined) req.write(payload);
     req.end();
   });
+
+const postJson = (host, path, headers, body) =>
+  httpsJson("POST", host, path, headers, body);
 
 exports.handler = async (event) => {
   if (!process.env.SUPERBLOCKS_TOKEN) {
     throw new Error("SUPERBLOCKS_TOKEN env var is not set on this Lambda");
   }
 
-  const userAttrs = event.request.userAttributes || {};
-  const role = userAttrs["custom:role"];
-  const groupId = role ? ROLE_TO_GROUP_ID[role] : undefined;
+  const userAttrs = (event && event.request && event.request.userAttributes) || {};
 
   const user = {
     email: userAttrs.email,
     name: userAttrs.name || userAttrs.email,
     metadata: {
-      external_role: role,
       cognitoUserId: userAttrs.sub,
     },
+    // TODO(group association): programmatically look up the user's
+    // Superblocks group based on their email domain — e.g. for
+    // "name@walmart.com", find or create the Superblocks group named
+    // "walmart.com" and pass its ID on `user.groupIds` below.
+    //
+    // Blocked on a Superblocks groups API. Until that's in place, every
+    // user signs in without explicit group membership and inherits
+    // whatever the org's "All Users" defaults grant.
   };
-  if (groupId) {
-    user.groupIds = [groupId];
-  }
 
   const token = await postJson(
     SUPERBLOCKS_TOKEN_HOST,

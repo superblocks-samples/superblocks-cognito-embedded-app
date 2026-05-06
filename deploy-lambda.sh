@@ -1,3 +1,7 @@
+# Required env vars before running this script:
+#   USER_POOL_ID            Cognito User Pool ID
+#   SUPERBLOCKS_TOKEN       Superblocks Embed access token (mints session tokens)
+
 # Resolve account / region for ARN building:
 ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
 REGION="$(aws configure get region)"
@@ -16,7 +20,7 @@ aws iam attach-role-policy \
   --role-name superblocks-pre-token-role \
   --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
 
-# 3) Create the Lambda (sleep covers IAM role propagation):
+# 3) Create the Lambda (sleep covers IAM role propagation).
 sleep 10
 aws lambda create-function \
   --function-name superblocks-pre-token \
@@ -25,7 +29,7 @@ aws lambda create-function \
   --handler superblocks-pre-token.handler \
   --zip-file fileb://cognito/lambda/function.zip \
   --environment "Variables={SUPERBLOCKS_TOKEN=$SUPERBLOCKS_TOKEN,SUPERBLOCKS_REGION=app}" \
-  --timeout 5
+  --timeout 10
 
 # 4) Allow Cognito to invoke the Lambda for this specific user pool:
 aws lambda add-permission \

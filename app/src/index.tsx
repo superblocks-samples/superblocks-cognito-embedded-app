@@ -2,8 +2,10 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { Amplify } from "aws-amplify";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import "./index.css";
 import App from "./App";
 import EmbeddedApp from "./components/EmbeddedApp";
+import LandingPlaceholder from "./components/LandingPlaceholder";
 
 const landingAppId = process.env.REACT_APP_SUPERBLOCKS_APPLICATION_ID;
 
@@ -52,17 +54,6 @@ const ConfigurationError = () => (
   </div>
 );
 
-const NoLandingAppMessage = () => (
-  <div style={{ padding: "2rem", fontFamily: "system-ui, sans-serif" }}>
-    <h1>No landing Superblocks app configured</h1>
-    <p>
-      Open any Superblocks app directly at <code>/apps/&lt;applicationId&gt;</code>, or set{" "}
-      <code>REACT_APP_SUPERBLOCKS_APPLICATION_ID</code> in <code>app/.env.local</code> to choose
-      the app rendered at <code>/</code> (see <code>app/env.example</code>).
-    </p>
-  </div>
-);
-
 const Root = () => {
   if (!cognitoConfigured) {
     return <ConfigurationError />;
@@ -72,7 +63,10 @@ const Root = () => {
       <Routes>
         <Route path="/login/callback" element={null} />
         <Route path="/apps/:appId/*" element={<EmbeddedApp />} />
-        <Route path="*" element={landingAppId ? <EmbeddedApp /> : <NoLandingAppMessage />} />
+        <Route
+          path="*"
+          element={landingAppId ? <EmbeddedApp /> : <LandingPlaceholder />}
+        />
       </Routes>
     </App>
   );

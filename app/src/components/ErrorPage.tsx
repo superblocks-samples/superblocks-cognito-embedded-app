@@ -6,6 +6,7 @@ interface ErrorPageProps {
   message: string;
   details?: string;
   statusCode?: number;
+  icon?: string;
   onRetry?: () => void;
   onLogout?: () => void;
   showRetry?: boolean;
@@ -17,6 +18,7 @@ const ErrorPage: React.FC<ErrorPageProps> = ({
   message,
   details,
   statusCode,
+  icon = '⚠️',
   onRetry,
   onLogout,
   showRetry = true,
@@ -25,7 +27,7 @@ const ErrorPage: React.FC<ErrorPageProps> = ({
   return (
     <div className="error-page">
       <div className="error-container">
-        <div className="error-icon">⚠️</div>
+        <div className="error-icon">{icon}</div>
         
         {statusCode && (
           <div className="error-code">{statusCode}</div>

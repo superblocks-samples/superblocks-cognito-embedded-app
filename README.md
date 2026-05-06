@@ -146,7 +146,7 @@ aws lambda create-function \
   --handler superblocks-pre-token.handler \
   --zip-file fileb://cognito/lambda/function.zip \
   --environment "Variables={SUPERBLOCKS_TOKEN=$SUPERBLOCKS_TOKEN,SUPERBLOCKS_REGION=app}" \
-  --timeout 5
+  --timeout 10
 
 # 4) Allow Cognito to invoke the Lambda for this specific user pool:
 aws lambda add-permission \
@@ -169,7 +169,17 @@ aws cognito-idp update-user-pool \
 > `aws cognito-idp describe-user-pool ... --query 'UserPool.LambdaConfig'`
 > to see what's currently set).
 
-To iterate on the Lambda after the initial deploy:
+To iterate on the Lambda after the initial deploy, use
+[`update-lambda.sh`](update-lambda.sh) — it re-zips, pushes the code, and
+refreshes env vars + timeout in one shot:
+
+```bash
+# Source your secrets first (same .env.lambda used by test-local.js):
+set -a && source .env.lambda && set +a
+./update-lambda.sh
+```
+
+Or, if you only want to push code (no env-var changes):
 
 ```bash
 ( cd cognito/lambda && zip -j function.zip superblocks-pre-token.js )
@@ -200,7 +210,7 @@ values; no spaces around `=`).
 | `REACT_APP_COGNITO_USER_POOL_ID` | `UserPool.Id` from `create-user-pool` (or AWS Console → Cognito → User Pools → your pool). |
 | `REACT_APP_COGNITO_USER_POOL_CLIENT_ID` | `UserPoolClient.ClientId` from `create-user-pool-client` (or User Pools → your pool → App integration → App client list). |
 | `REACT_APP_COGNITO_DOMAIN` | The full Managed Login (or classic Hosted UI) domain, e.g. `superblocks-embed-local-1234.auth.us-east-1.amazoncognito.com` (no `https://`). Look it up with `aws cognito-idp describe-user-pool --user-pool-id "$USER_POOL_ID" --query 'UserPool.Domain'` (prefix only — append `.auth.<region>.amazoncognito.com`). |
-| `REACT_APP_SUPERBLOCKS_APPLICATION_ID` | Superblocks Admin → **Applications** → open your app → copy its **application ID** (UUID) from the URL or app settings. |
+| `REACT_APP_SUPERBLOCKS_APPLICATION_ID` | **Optional.** Superblocks Admin → **Applications** → open your app → copy its **application ID** (UUID) from the URL or app settings. The app you set here renders at `/` — typically a landing page you build in Superblocks (a list of apps, an integrations launcher, etc.). Leave unset to show a placeholder at `/`; either way, any Superblocks app in your org renders dynamically at `/apps/<applicationId>` using its UUID. |
 | `REACT_APP_SUPERBLOCKS_URL` | Your Superblocks instance **origin only**: `https://app.superblocks.com` (US) or `https://eu.superblocks.com` (EU), or your org's custom host. Do not include a path or trailing slash. |
 
 Example (replace with your real values):
@@ -242,60 +252,31 @@ with the embed loaded.
 
 ## Production
 
-For real users, **create a dedicated Cognito User Pool for production** —
-and ideally a separate **AWS account** as well (e.g. `mycompany-dev`,
-`mycompany-prod`). Don't simply add production URLs to the local app
-client you made in step 2; that mixes environments and widens the
-redirect-URI attack surface. Details and CLI commands:
-[docs/setup-cognito-user-pool.md → Production setup](docs/setup-cognito-user-pool.md#production-setup).
+Repeat the Quick start in a **separate, prod-only environment** — don't
+reuse the User Pool, Lambda, or env vars you set up for local dev. The
+same commands apply, with these substitutions:
 
-1. **Cognito prod User Pool + SPA app client** — create a new User Pool in
-   your prod account/region with prod URLs only:
-
-   ```bash
-   aws cognito-idp create-user-pool \
-     --pool-name "superblocks-embed-prod" \
-     --user-pool-tier ESSENTIALS \
-     --auto-verified-attributes email \
-     --username-attributes email
-   # … copy the new UserPool.Id …
-
-   aws cognito-idp create-user-pool-domain \
-     --user-pool-id "<prod-pool-id>" \
-     --managed-login-version 2 \
-     --domain "<your-prod-prefix>"
-
-   aws cognito-idp create-user-pool-client \
-     --user-pool-id "<prod-pool-id>" \
-     --client-name "superblocks-embed-spa-prod" \
-     --no-generate-secret \
-     --supported-identity-providers COGNITO \
-     --callback-urls "https://app.example.com/login/callback" \
-     --logout-urls "https://app.example.com/" \
-     --allowed-o-auth-flows code \
-     --allowed-o-auth-scopes openid profile email \
-     --allowed-o-auth-flows-user-pool-client
-
-   # Required for Managed Login (see step 2 in Quick start):
-   aws cognito-idp create-managed-login-branding \
-     --user-pool-id "<prod-pool-id>" \
-     --client-id "<prod-client-id>" \
-     --use-cognito-provided-values
-   ```
-
-2. **Pre Token Generation Lambda** — repeat
-   [docs/cognito-pre-token-trigger.md](docs/cognito-pre-token-trigger.md)
-   inside the prod account, with a production Superblocks embed token in
-   `SUPERBLOCKS_TOKEN` (sourced from AWS Secrets Manager).
-
-3. **Build & host** — `cd app && npm run build` and host `app/build/` on
-   S3, Netlify, Vercel, etc.
-
-4. **Production env vars** — set the **prod** values of
-   `REACT_APP_COGNITO_USER_POOL_ID`, `REACT_APP_COGNITO_USER_POOL_CLIENT_ID`,
-   `REACT_APP_COGNITO_DOMAIN`, `REACT_APP_SUPERBLOCKS_APPLICATION_ID`, and
-   `REACT_APP_SUPERBLOCKS_URL` in your hosting provider's environment
-   variables.
+- **Dedicated AWS account & Cognito User Pool.** Create a new User Pool
+  (and ideally a separate AWS account, e.g. `mycompany-dev` /
+  `mycompany-prod`) instead of adding prod URLs to the local app client.
+  Mixing environments widens the redirect-URI attack surface. Use prod
+  values in the step 2 / step 3 CLI commands:
+  - `--callback-urls "https://app.example.com/login/callback"`
+  - `--logout-urls "https://app.example.com/"`
+  - A prod-specific pool name and Managed Login domain prefix.
+  - See [docs/setup-cognito-user-pool.md → Production setup](docs/setup-cognito-user-pool.md#production-setup)
+    for the full command list.
+- **Pre Token Generation Lambda in the prod account.** Re-run
+  [docs/cognito-pre-token-trigger.md](docs/cognito-pre-token-trigger.md)
+  with a **production** Superblocks embed token in `SUPERBLOCKS_TOKEN`,
+  sourced from AWS Secrets Manager (not committed to the repo).
+- **Build & host the React app.** `cd app && npm run build` and host
+  `app/build/` on S3, Netlify, Vercel, etc.
+- **Set prod env vars on your host.** `REACT_APP_COGNITO_USER_POOL_ID`,
+  `REACT_APP_COGNITO_USER_POOL_CLIENT_ID`, `REACT_APP_COGNITO_DOMAIN`,
+  `REACT_APP_SUPERBLOCKS_APPLICATION_ID` (optional), and
+  `REACT_APP_SUPERBLOCKS_URL` should all point at the prod values, never
+  the local ones.
 
 ## Configuration reference
 
@@ -306,9 +287,20 @@ redirect-URI attack surface. Details and CLI commands:
 | `REACT_APP_COGNITO_DOMAIN` | Yes | Full Managed Login / Hosted UI domain (no `https://`) |
 | `REACT_APP_COGNITO_REDIRECT_SIGN_IN` | No | Override the OAuth callback URL; default `${origin}/login/callback` |
 | `REACT_APP_COGNITO_REDIRECT_SIGN_OUT` | No | Override the post sign-out URL; default `${origin}/` |
-| `REACT_APP_SUPERBLOCKS_APPLICATION_ID` | Yes | Superblocks app ID |
+| `REACT_APP_SUPERBLOCKS_APPLICATION_ID` | No | Superblocks app embedded at `/`. Leave unset to show a placeholder at `/` reminding you to set it. |
 | `REACT_APP_SUPERBLOCKS_URL` | Yes | Superblocks instance URL |
 | `REACT_APP_SUPERBLOCKS_APP_VERSION` | No | `2.0` (code mode) or `1.0` (legacy); default `2.0` |
+
+### Landing page
+
+`/` renders the Superblocks application identified by
+`REACT_APP_SUPERBLOCKS_APPLICATION_ID`. The intended pattern is to build
+your landing page **in Superblocks** (a list of apps, an integrations
+launcher, a dashboard, etc.) and embed it here. Other apps live at
+`/apps/<applicationId>/` using their UUID.
+
+If `REACT_APP_SUPERBLOCKS_APPLICATION_ID` is unset, `/` shows a
+placeholder pointing at the env var to configure.
 
 ## Scripts
 
@@ -371,10 +363,6 @@ aws cognito-idp create-managed-login-branding \
   --client-id "<your-client-id>" \
   --use-cognito-provided-values
 ```
-
-**EU Superblocks**  
-Set Lambda env var `SUPERBLOCKS_REGION` to `eu` (see
-[cognito/lambda/superblocks-pre-token.js](cognito/lambda/superblocks-pre-token.js)).
 
 ## Resources
 

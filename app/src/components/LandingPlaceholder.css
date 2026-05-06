@@ -1,0 +1,96 @@
+.landing-placeholder {
+  font-family: var(--font-sans);
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 16px;
+  background:
+    radial-gradient(
+      900px 380px at 50% -120px,
+      rgba(46, 91, 255, 0.07),
+      transparent 70%
+    ),
+    var(--color-bg-subtle);
+  box-sizing: border-box;
+}
+
+.landing-placeholder-card {
+  max-width: 520px;
+  width: 100%;
+  padding: 36px 32px;
+  text-align: center;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+}
+
+.landing-placeholder-icon {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 16px;
+  line-height: 0;
+}
+
+.landing-placeholder-title {
+  font-size: 22px;
+  font-weight: var(--weight-semibold);
+  color: var(--color-text);
+  margin: 0 0 10px 0;
+  letter-spacing: -0.01em;
+}
+
+.landing-placeholder-subtitle {
+  font-size: var(--text-small);
+  color: var(--color-text-secondary);
+  line-height: var(--leading-normal);
+  margin: 0 0 24px 0;
+}
+
+.landing-placeholder-subtitle code,
+.landing-placeholder-step code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: var(--color-bg-hover);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 1px 6px;
+  color: var(--color-text);
+}
+
+.landing-placeholder-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  text-align: left;
+  font-size: var(--text-small);
+  color: var(--color-text-secondary);
+  line-height: var(--leading-normal);
+  padding: 12px 14px;
+  background: var(--color-bg-subtle);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.landing-placeholder-step + .landing-placeholder-step {
+  margin-top: 8px;
+}
+
+.landing-placeholder-step-num {
+  flex: 0 0 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: linear-gradient(
+    135deg,
+    var(--color-primary) 0%,
+    var(--color-accent-purple) 100%
+  );
+  color: var(--color-on-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: var(--weight-semibold);
+}

@@ -42,7 +42,7 @@ aws iam attach-role-policy \
   --role-name superblocks-pre-token-role \
   --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
 
-# Wait a few seconds for the role to propagate, then create the Lambda:
+# Wait a few seconds for the role to propagate, then create the Lambda.
 aws lambda create-function \
   --function-name superblocks-pre-token \
   --runtime nodejs20.x \
@@ -50,12 +50,12 @@ aws lambda create-function \
   --handler superblocks-pre-token.handler \
   --zip-file fileb://cognito/lambda/function.zip \
   --environment "Variables={SUPERBLOCKS_TOKEN=<your-superblocks-embed-token>,SUPERBLOCKS_REGION=app}" \
-  --timeout 5
+  --timeout 10
 ```
 
 > **Secrets in production.** Don't set `SUPERBLOCKS_TOKEN` as a plain Lambda
 > env var in prod. Store it in AWS Secrets Manager and either:
-> (a) use Lambda env-var encryption helpers and a KMS-encrypted env var,
+> (a) use Lambda env-var encryption helpers and KMS-encrypted env vars,
 > or (b) `GetSecretValue` from the handler at cold-start. Option (b) avoids
 > the token ever appearing in `aws lambda get-function-configuration`.
 
@@ -104,6 +104,43 @@ aws lambda update-function-code \
   --zip-file fileb://function.zip
 cd ../..
 ```
+
+## Group association
+
+The handler currently does **not** pass a `groupIds` field on the
+`POST /api/v1/public/token` request, so every signed-in user inherits
+whatever the org's "All Users" defaults grant — no per-user Superblocks
+group membership.
+
+> **Future work.** Wire up programmatic group resolution based on the
+> user's email domain — e.g. a user signing in as `name@walmart.com` gets
+> placed into the Superblocks group named `walmart.com`, with that group
+> created on first use. Blocked on a Superblocks groups API; see the
+> `TODO(group association)` block in
+> [`superblocks-pre-token.js`](../cognito/lambda/superblocks-pre-token.js).
+
+### Test locally before deploying
+
+```bash
+# At repo root:
+cp cognito/lambda/env.example .env.lambda           # gitignored
+# Edit .env.lambda — set SUPERBLOCKS_TOKEN
+set -a && source .env.lambda && set +a
+
+# Run the full handler against a mock Cognito event and decode the resulting
+# Superblocks JWT:
+node cognito/lambda/test-local.js abc@mycompany.com "Test User"
+```
+
+### Where to put the secret
+
+| Value | Local dev | Lambda dev | Lambda prod |
+| --- | --- | --- | --- |
+| `SUPERBLOCKS_TOKEN` (embed) | `.env.lambda` (gitignored) | plain Lambda env var | **Secrets Manager** |
+
+For prod, store the token in Secrets Manager, grant the Lambda role
+`secretsmanager:GetSecretValue` on the secret's ARN, and have the handler
+load it at cold start (cache for the container lifetime).
 
 ## Verify
 

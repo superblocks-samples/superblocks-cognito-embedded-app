@@ -1,6 +1,7 @@
-import React, { useCallback } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { useParams, useLocation, useNavigate, Navigate } from "react-router-dom";
 import { SuperblocksEmbed } from "@superblocksteam/embed-react";
+import { fetchAuthSession } from "aws-amplify/auth";
 import { useSuperblocksAuth } from "../App";
 
 // embed-react v2 only re-exports `SuperblocksEmbed` from its package root, so
@@ -55,6 +56,25 @@ const EmbeddedApp = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { token, signOut, reportAuthError } = useSuperblocksAuth();
+  const [userEmail, setUserEmail] = useState<string | undefined>();
+
+  // Cache the signed-in user's email so we can surface it on access-denied
+  // screens (admins need to know which account to grant access to).
+  useEffect(() => {
+    let cancelled = false;
+    fetchAuthSession()
+      .then((session) => {
+        if (cancelled) return;
+        const email = session.tokens?.idToken?.payload?.email as string | undefined;
+        setUserEmail(email);
+      })
+      .catch(() => {
+        // Best-effort only; the access-denied screen still works without it.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const superblocksUrl = process.env.REACT_APP_SUPERBLOCKS_URL;
   const superblocksAppVersion = process.env.REACT_APP_SUPERBLOCKS_APP_VERSION || "2.0";
@@ -92,10 +112,29 @@ const EmbeddedApp = () => {
 
   const handleAuthError = (event: AuthErrorEvent) => {
     console.error("Superblocks authentication error:", event);
+    const code = event?.error ?? "";
+
+    // The Superblocks embed reports `access_denied` when the signed-in user
+    // doesn't have permission to view this specific app. Retrying won't help
+    // — they need an admin to grant access — so render a tailored screen
+    // instead of the generic "session expired" copy.
+    if (code === "access_denied") {
+      reportAuthError({
+        icon: "🔒",
+        title: "You don't have access to this app",
+        message: userEmail
+          ? `Your account (${userEmail}) doesn't have permission to view this Superblocks application. Contact your administrator to request access.`
+          : "Your account doesn't have permission to view this Superblocks application. Contact your administrator to request access.",
+        showRetry: false,
+      });
+      return;
+    }
+
     reportAuthError({
-      title: "Session Expired",
-      message: "Your Superblocks session has expired or encountered an authentication error.",
-      details: event?.error,
+      title: "Session expired",
+      message:
+        "Your Superblocks session has expired or encountered an authentication error.",
+      details: code || undefined,
     });
   };
 
