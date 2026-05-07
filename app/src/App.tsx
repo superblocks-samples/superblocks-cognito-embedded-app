@@ -259,11 +259,8 @@ const App = ({ children }: { children: React.ReactNode }) => {
               onClick={() => navigate("/")}
               aria-label="Go to home"
             >
-              <img
-                src="https://cdn.brandfetch.io/idgF9FqCgW/theme/dark/logo.svg?c=1bxid64Mup7aczewSAYMX&t=1667820887617"
-                alt="Amplitude"
-                className="app-toolbar-logo"
-              />
+              <BrandMark />
+              <span className="app-toolbar-brand-text">Your Logo Here</span>
             </button>
             {showBackToLanding && (
               <button onClick={() => navigate("/")} className="toolbar-button">
@@ -298,6 +295,34 @@ const App = ({ children }: { children: React.ReactNode }) => {
     </SuperblocksAuthContext.Provider>
   );
 };
+
+/** Generic toolbar brand mark — replace with a real customer logo when needed. */
+const BrandMark: React.FC = () => (
+  <svg
+    width="22"
+    height="22"
+    viewBox="0 0 22 22"
+    aria-hidden="true"
+    className="app-toolbar-logo"
+  >
+    <defs>
+      <linearGradient id="app-brand-grad" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0%" stopColor="var(--color-primary)" />
+        <stop offset="100%" stopColor="var(--color-accent-purple)" />
+      </linearGradient>
+    </defs>
+    <rect x="1" y="1" width="20" height="20" rx="5" fill="url(#app-brand-grad)" />
+    <path
+      d="M7 14.5 L11 7 L15 14.5"
+      fill="none"
+      stroke="white"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <line x1="8.6" y1="11.7" x2="13.4" y2="11.7" stroke="white" strokeWidth="1.6" strokeLinecap="round" />
+  </svg>
+);
 
 /** Toolbar avatar — derive 2-letter initials from name, fall back to email. */
 const avatarInitials = (user: UserProfile): string => {
