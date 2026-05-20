@@ -110,14 +110,14 @@ classic Hosted UI on the Lite tier): [docs/setup-cognito-user-pool.md](docs/setu
 Package [cognito/lambda/superblocks-pre-token.js](cognito/lambda/superblocks-pre-token.js)
 (no third-party deps), create an execution role + the Lambda, allow
 Cognito to invoke it, and wire it to the User Pool as a **Pre Token
-Generation V2** trigger. Set `SUPERBLOCKS_TOKEN` to your Superblocks Embed
+Generation V2** trigger. Set `SUPERBLOCKS_EMBED_TOKEN` to your Superblocks Embed
 access token (and optionally `SUPERBLOCKS_REGION` to `eu`).
 
 ```bash
 # These should already be set from step 2:
 #   $USER_POOL_ID            (e.g. us-east-1_aBcDeFgHi)
 # Plus your Superblocks Embed access token:
-export SUPERBLOCKS_TOKEN="<your-superblocks-embed-token>"
+export SUPERBLOCKS_EMBED_TOKEN="<your-superblocks-embed-token>"
 
 # Resolve account / region for ARN building:
 ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
@@ -145,7 +145,7 @@ aws lambda create-function \
   --role "arn:aws:iam::$ACCOUNT_ID:role/superblocks-pre-token-role" \
   --handler superblocks-pre-token.handler \
   --zip-file fileb://cognito/lambda/function.zip \
-  --environment "Variables={SUPERBLOCKS_TOKEN=$SUPERBLOCKS_TOKEN,SUPERBLOCKS_REGION=app}" \
+  --environment "Variables={SUPERBLOCKS_EMBED_TOKEN=$SUPERBLOCKS_EMBED_TOKEN,SUPERBLOCKS_REGION=app}" \
   --timeout 10
 
 # 4) Allow Cognito to invoke the Lambda for this specific user pool:
@@ -189,7 +189,7 @@ aws lambda update-function-code \
 ```
 
 More detail (including a Secrets Manager pattern for the prod
-`SUPERBLOCKS_TOKEN`): [docs/cognito-pre-token-trigger.md](docs/cognito-pre-token-trigger.md).
+`SUPERBLOCKS_EMBED_TOKEN`): [docs/cognito-pre-token-trigger.md](docs/cognito-pre-token-trigger.md).
 The Superblocks tutorial is here: [use-auth-for-sso](https://docs.superblocks.com/hosting/embedded-apps/how-tos/use-auth-for-sso).
 
 ### 4. Configure the React app
@@ -268,7 +268,7 @@ same commands apply, with these substitutions:
     for the full command list.
 - **Pre Token Generation Lambda in the prod account.** Re-run
   [docs/cognito-pre-token-trigger.md](docs/cognito-pre-token-trigger.md)
-  with a **production** Superblocks embed token in `SUPERBLOCKS_TOKEN`,
+  with a **production** Superblocks embed token in `SUPERBLOCKS_EMBED_TOKEN`,
   sourced from AWS Secrets Manager (not committed to the repo).
 - **Build & host the React app.** `cd app && npm run build` and host
   `app/build/` on S3, Netlify, Vercel, etc.
@@ -334,7 +334,7 @@ cd app && rm -rf node_modules/.cache && npm install
 ```
 
 **`superblocks_token` missing on ID token**  
-Confirm the Lambda is deployed, `SUPERBLOCKS_TOKEN` env var is set, the
+Confirm the Lambda is deployed, `SUPERBLOCKS_EMBED_TOKEN` env var is set, the
 Pre Token Generation trigger is wired with `LambdaVersion=V2_0`, and
 Cognito has `lambda:InvokeFunction` permission on it. Check the Lambda's
 CloudWatch logs (`/aws/lambda/superblocks-pre-token`) for the request to

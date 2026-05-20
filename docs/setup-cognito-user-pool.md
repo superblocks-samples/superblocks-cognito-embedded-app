@@ -21,7 +21,7 @@ account). Splitting pools gives you:
 - **Per-app URLs** — keeping `localhost:3000` out of the prod app client's
   callback / sign-out URL list removes a real attack surface.
 - **Separate secrets** — the Pre Token Generation Lambda's
-  `SUPERBLOCKS_TOKEN` is usually a different embed token in prod (and should
+  `SUPERBLOCKS_EMBED_TOKEN` is usually a different embed token in prod (and should
   live in AWS Secrets Manager, scoped to that account).
 - **Different env vars per build** — `REACT_APP_COGNITO_USER_POOL_ID`,
   `REACT_APP_COGNITO_USER_POOL_CLIENT_ID`, and `REACT_APP_COGNITO_DOMAIN`

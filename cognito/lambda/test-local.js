@@ -2,7 +2,7 @@
 /**
  * Local sanity-check for the Pre Token Generation Lambda. Invokes the
  * handler against a mock Cognito event so you can verify your
- * SUPERBLOCKS_TOKEN, region, and the resulting claims before deploying.
+ * SUPERBLOCKS_EMBED_TOKEN, region, and the resulting claims before deploying.
  *
  * Setup:
  *   cp cognito/lambda/env.example .env.lambda     # gitignored at repo root
@@ -13,13 +13,13 @@
  *   node cognito/lambda/test-local.js                              # uses sample inputs
  *   node cognito/lambda/test-local.js you@mycompany.com
  *   node cognito/lambda/test-local.js you@mycompany.com "Test User"
+ *   node cognito/lambda/test-local.js list                         # SCIM: list groups
+ *   node cognito/lambda/test-local.js list mycompany.com           # SCIM: filter by name
  */
 const lambda = require("./superblocks-pre-token");
 
-const REQUIRED = ["SUPERBLOCKS_TOKEN"];
-
-function assertEnv() {
-  const missing = REQUIRED.filter((k) => !process.env[k]);
+function assertEnv(required) {
+  const missing = required.filter((k) => !process.env[k]);
   if (missing.length) {
     console.error(
       `Missing env vars: ${missing.join(", ")}\n` +
@@ -51,16 +51,14 @@ function decodeJwt(jwt) {
   }
 }
 
-(async () => {
-  assertEnv();
-
-  const email = process.argv[2] || "test.user@mycompany.com";
-  const name = process.argv[3] || email;
+async function runHandler(email, name) {
+  assertEnv(["SUPERBLOCKS_EMBED_TOKEN"]);
 
   console.log("Env summary:");
-  console.log(`  SUPERBLOCKS_TOKEN  = ${previewToken(process.env.SUPERBLOCKS_TOKEN)}`);
+  console.log(`  SUPERBLOCKS_EMBED_TOKEN     = ${previewToken(process.env.SUPERBLOCKS_EMBED_TOKEN)}`);
+  console.log(`  SUPERBLOCKS_ORG_ADMIN_TOKEN = ${previewToken(process.env.SUPERBLOCKS_ORG_ADMIN_TOKEN)}`);
   console.log(
-    `  SUPERBLOCKS_REGION = ${process.env.SUPERBLOCKS_REGION || "(default: app)"}`,
+    `  SUPERBLOCKS_REGION          = ${process.env.SUPERBLOCKS_REGION || "(default: app)"}`,
   );
   console.log();
 
@@ -98,6 +96,65 @@ function decodeJwt(jwt) {
         .join("\n"),
     );
   }
+}
+
+async function runListGroups(filterName) {
+  assertEnv(["SUPERBLOCKS_ORG_ADMIN_TOKEN"]);
+  const { findGroupByName } = lambda._internals;
+  if (filterName) {
+    console.log(`Looking up SCIM group with displayName="${filterName}"…`);
+    const group = await findGroupByName(filterName);
+    if (!group) {
+      console.log("  (no match)");
+      return;
+    }
+    console.log(`  ${group.id}\t${group.displayName}`);
+    return;
+  }
+  // No filter: hit SCIM /Groups directly and print all results.
+  const https = require("https");
+  const region = process.env.SUPERBLOCKS_REGION || "app";
+  await new Promise((resolve, reject) => {
+    const req = https.request(
+      {
+        host: `${region}.superblocks.com`,
+        path: "/scim/v2/Groups",
+        method: "GET",
+        headers: {
+          accept: "application/json",
+          authorization: `Bearer ${process.env.SUPERBLOCKS_ORG_ADMIN_TOKEN}`,
+        },
+      },
+      (res) => {
+        let chunks = "";
+        res.on("data", (c) => (chunks += c));
+        res.on("end", () => {
+          if (res.statusCode !== 200) {
+            console.error(`  ${res.statusCode}: ${chunks}`);
+            return reject(new Error(`SCIM list failed (${res.statusCode})`));
+          }
+          const body = JSON.parse(chunks);
+          const groups = body.Resources || [];
+          console.log(`Found ${groups.length} group(s):`);
+          for (const g of groups) console.log(`  ${g.id}\t${g.displayName}`);
+          resolve();
+        });
+      },
+    );
+    req.on("error", reject);
+    req.end();
+  });
+}
+
+(async () => {
+  const [, , cmd, ...rest] = process.argv;
+  if (cmd === "list") {
+    await runListGroups(rest[0]);
+    return;
+  }
+  const email = cmd || "test.user@mycompany.com";
+  const name = rest[0] || email;
+  await runHandler(email, name);
 })().catch((err) => {
   console.error("\nFAILED:", err.message);
   if (err.body) console.error("  body:", JSON.stringify(err.body));

@@ -1,6 +1,9 @@
 # Required env vars before running this script:
 #   USER_POOL_ID            Cognito User Pool ID
-#   SUPERBLOCKS_TOKEN       Superblocks Embed access token (mints session tokens)
+#   SUPERBLOCKS_EMBED_TOKEN       Superblocks Embed access token (mints session tokens)
+# Optional env vars:
+#   SUPERBLOCKS_ORG_ADMIN_TOKEN   Org Admin access token (SCIM group resolution)
+#   SUPERBLOCKS_REGION      "app" (default) or "eu"
 
 # Resolve account / region for ARN building:
 ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
@@ -21,14 +24,26 @@ aws iam attach-role-policy \
   --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
 
 # 3) Create the Lambda (sleep covers IAM role propagation).
+#    Env JSON is built via Node so token values containing =,",{} survive
+#    shell quoting (embed/admin tokens commonly include `=` and `/`).
 sleep 10
+ENV_JSON=$(node -e '
+  const env = {
+    SUPERBLOCKS_EMBED_TOKEN: process.env.SUPERBLOCKS_EMBED_TOKEN,
+    SUPERBLOCKS_REGION: process.env.SUPERBLOCKS_REGION || "app",
+  };
+  if (process.env.SUPERBLOCKS_ORG_ADMIN_TOKEN) {
+    env.SUPERBLOCKS_ORG_ADMIN_TOKEN = process.env.SUPERBLOCKS_ORG_ADMIN_TOKEN;
+  }
+  process.stdout.write(JSON.stringify({ Variables: env }));
+')
 aws lambda create-function \
   --function-name superblocks-pre-token \
   --runtime nodejs20.x \
   --role "arn:aws:iam::$ACCOUNT_ID:role/superblocks-pre-token-role" \
   --handler superblocks-pre-token.handler \
   --zip-file fileb://cognito/lambda/function.zip \
-  --environment "Variables={SUPERBLOCKS_TOKEN=$SUPERBLOCKS_TOKEN,SUPERBLOCKS_REGION=app}" \
+  --environment "$ENV_JSON" \
   --timeout 10
 
 # 4) Allow Cognito to invoke the Lambda for this specific user pool:

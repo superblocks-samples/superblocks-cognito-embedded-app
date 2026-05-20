@@ -9,14 +9,15 @@
 #   ./update-lambda.sh
 #
 # Required env:
-#   SUPERBLOCKS_TOKEN       Embed access token (mints Superblocks sessions)
+#   SUPERBLOCKS_EMBED_TOKEN       Embed access token (mints Superblocks sessions)
 # Optional env:
+#   SUPERBLOCKS_ORG_ADMIN_TOKEN   Org Admin access token (SCIM group resolution)
 #   SUPERBLOCKS_REGION      "app" (default) or "eu"
 #   FUNCTION_NAME           Lambda name (default: superblocks-pre-token)
 
 set -euo pipefail
 
-: "${SUPERBLOCKS_TOKEN:?SUPERBLOCKS_TOKEN is required. Did you forget: set -a && source .env.lambda && set +a ?}"
+: "${SUPERBLOCKS_EMBED_TOKEN:?SUPERBLOCKS_EMBED_TOKEN is required. Did you forget: set -a && source .env.lambda && set +a ?}"
 
 FUNCTION_NAME="${FUNCTION_NAME:-superblocks-pre-token}"
 
@@ -36,9 +37,12 @@ aws lambda wait function-updated --function-name "$FUNCTION_NAME"
 #    AWS CLI's Variables={…} shorthand syntax).
 ENV_JSON=$(node -e '
   const env = {
-    SUPERBLOCKS_TOKEN: process.env.SUPERBLOCKS_TOKEN,
+    SUPERBLOCKS_EMBED_TOKEN: process.env.SUPERBLOCKS_EMBED_TOKEN,
     SUPERBLOCKS_REGION: process.env.SUPERBLOCKS_REGION || "app",
   };
+  if (process.env.SUPERBLOCKS_ORG_ADMIN_TOKEN) {
+    env.SUPERBLOCKS_ORG_ADMIN_TOKEN = process.env.SUPERBLOCKS_ORG_ADMIN_TOKEN;
+  }
   process.stdout.write(JSON.stringify({ Variables: env }));
 ')
 

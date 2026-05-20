@@ -19,7 +19,7 @@ as the Lambda code (adjust `metadata` / `groupIds` if needed).
 > account. If you use separate dev/prod accounts (recommended — see
 > [setup-cognito-user-pool.md](setup-cognito-user-pool.md#pools-and-environments-read-this-first)),
 > repeat the steps below in **each** account and give the prod Lambda a
-> production-grade `SUPERBLOCKS_TOKEN` (sourced from Secrets Manager).
+> production-grade `SUPERBLOCKS_EMBED_TOKEN` (sourced from Secrets Manager).
 
 ## Console / CLI setup
 
@@ -49,15 +49,16 @@ aws lambda create-function \
   --role "arn:aws:iam::$(aws sts get-caller-identity --query Account --output text):role/superblocks-pre-token-role" \
   --handler superblocks-pre-token.handler \
   --zip-file fileb://cognito/lambda/function.zip \
-  --environment "Variables={SUPERBLOCKS_TOKEN=<your-superblocks-embed-token>,SUPERBLOCKS_REGION=app}" \
+  --environment "Variables={SUPERBLOCKS_EMBED_TOKEN=<your-superblocks-embed-token>,SUPERBLOCKS_ORG_ADMIN_TOKEN=<your-superblocks-org-admin-token>,SUPERBLOCKS_REGION=app}" \
   --timeout 10
 ```
 
-> **Secrets in production.** Don't set `SUPERBLOCKS_TOKEN` as a plain Lambda
-> env var in prod. Store it in AWS Secrets Manager and either:
+> **Secrets in production.** Don't set `SUPERBLOCKS_EMBED_TOKEN` or
+> `SUPERBLOCKS_ORG_ADMIN_TOKEN` as plain Lambda env vars in prod. Store them in
+> AWS Secrets Manager and either:
 > (a) use Lambda env-var encryption helpers and KMS-encrypted env vars,
 > or (b) `GetSecretValue` from the handler at cold-start. Option (b) avoids
-> the token ever appearing in `aws lambda get-function-configuration`.
+> the tokens ever appearing in `aws lambda get-function-configuration`.
 
 ### 2. Allow Cognito to invoke the Lambda
 
@@ -105,42 +106,61 @@ aws lambda update-function-code \
 cd ../..
 ```
 
-## Group association
+## Group association (email-domain → Superblocks group)
 
-The handler currently does **not** pass a `groupIds` field on the
-`POST /api/v1/public/token` request, so every signed-in user inherits
-whatever the org's "All Users" defaults grant — no per-user Superblocks
-group membership.
+When `SUPERBLOCKS_ORG_ADMIN_TOKEN` is set on the Lambda, the handler resolves
+each signed-in user's email domain to a Superblocks group via the
+[SCIM 2.0 Groups API](https://docs.superblocks.com/admin/org-administration/auth/scim)
+and includes its ID on the `/public/token` request:
 
-> **Future work.** Wire up programmatic group resolution based on the
-> user's email domain — e.g. a user signing in as `name@walmart.com` gets
-> placed into the Superblocks group named `walmart.com`, with that group
-> created on first use. Blocked on a Superblocks groups API; see the
-> `TODO(group association)` block in
-> [`superblocks-pre-token.js`](../cognito/lambda/superblocks-pre-token.js).
+| Email                  | Group lookup (SCIM `displayName eq …`) | Action          |
+| ---------------------- | -------------------------------------- | --------------- |
+| `alice@walmart.com`    | `walmart.com`                          | use existing ID |
+| `bob@new-customer.com` | `new-customer.com` (not found)         | create + use ID |
+
+- **Token type.** Use an **Org Admin** access token from Superblocks Admin
+  → Organization Settings → Access Tokens — the Embed token used for
+  `/public/token` is not authorized to call SCIM.
+- **Endpoint.** `https://<region>.superblocks.com/scim/v2/Groups`
+  (US: `app`, EU: `eu`).
+- **Caching.** Resolved `domain → groupId` is cached in-memory for the
+  warm-container lifetime, so SCIM is only hit on cold start.
+- **Self-healing.** If `/public/token` later rejects a cached ID
+  (`"The following requested group IDs are invalid: …"` after the group
+  was deleted in Superblocks), the handler evicts that ID and retries
+  once without it.
+- **Fallback.** If `SUPERBLOCKS_ORG_ADMIN_TOKEN` is unset or SCIM is
+  unreachable, group resolution is skipped (logged) and the user signs
+  in with only the org's "All Users" defaults.
 
 ### Test locally before deploying
 
 ```bash
 # At repo root:
 cp cognito/lambda/env.example .env.lambda           # gitignored
-# Edit .env.lambda — set SUPERBLOCKS_TOKEN
+# Edit .env.lambda — set SUPERBLOCKS_EMBED_TOKEN (and SUPERBLOCKS_ORG_ADMIN_TOKEN if
+# you want group resolution to run)
 set -a && source .env.lambda && set +a
 
 # Run the full handler against a mock Cognito event and decode the resulting
 # Superblocks JWT:
 node cognito/lambda/test-local.js abc@mycompany.com "Test User"
+
+# Or poke the SCIM Groups API directly:
+node cognito/lambda/test-local.js list                  # list all groups
+node cognito/lambda/test-local.js list mycompany.com    # filter by displayName
 ```
 
-### Where to put the secret
+### Where to put the secrets
 
 | Value | Local dev | Lambda dev | Lambda prod |
 | --- | --- | --- | --- |
-| `SUPERBLOCKS_TOKEN` (embed) | `.env.lambda` (gitignored) | plain Lambda env var | **Secrets Manager** |
+| `SUPERBLOCKS_EMBED_TOKEN` (embed) | `.env.lambda` (gitignored) | plain Lambda env var | **Secrets Manager** |
+| `SUPERBLOCKS_ORG_ADMIN_TOKEN` (org admin / SCIM) | `.env.lambda` (gitignored) | plain Lambda env var | **Secrets Manager** |
 
-For prod, store the token in Secrets Manager, grant the Lambda role
-`secretsmanager:GetSecretValue` on the secret's ARN, and have the handler
-load it at cold start (cache for the container lifetime).
+For prod, store both tokens in Secrets Manager, grant the Lambda role
+`secretsmanager:GetSecretValue` on the secret ARNs, and have the handler
+load them at cold start (cache for the container lifetime).
 
 ## Verify
 
@@ -160,7 +180,7 @@ If the claim is missing:
 
 - Check the Lambda's CloudWatch logs (`/aws/lambda/superblocks-pre-token`)
   for errors from the Superblocks API call.
-- Confirm `SUPERBLOCKS_TOKEN` is set on the Lambda (`aws lambda
+- Confirm `SUPERBLOCKS_EMBED_TOKEN` is set on the Lambda (`aws lambda
   get-function-configuration --function-name superblocks-pre-token`).
 - Confirm the Pre Token Generation trigger is wired with `LambdaVersion=V2_0`
   on the User Pool.
